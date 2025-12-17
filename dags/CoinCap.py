@@ -1,8 +1,7 @@
-from airflow.decorators import dag
-import pandas as pd
 import pendulum
+from airflow.decorators import dag, task
 
-@aql.dataframe(task_id="python_1")
+@task
 def python_1_func():
     print("Teste 1")
     print("Teste 2")
