@@ -7,7 +7,7 @@ import pendulum
 def python_1_func():
     print("Teste 1")
     print("Teste 2")
-    print("Teste 3")
+
 
 default_args = {
     "owner": "Alex Lopes,Open in Cloud IDE",
