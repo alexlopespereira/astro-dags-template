@@ -1,5 +1,4 @@
 from airflow.decorators import dag
-from astro import sql as aql
 import pandas as pd
 import pendulum
 
