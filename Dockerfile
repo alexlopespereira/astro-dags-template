@@ -1,4 +1,4 @@
-FROM astrocrpublic.azurecr.io/runtime:3.0-11-python-3.12
+FROM quay.io/astronomer/astro-runtime:3.0-12
 
 # 2. Switch to the 'root' user to get permissions for installation
 USER root
