@@ -14,7 +14,7 @@ DEFAULT_ARGS = {
 }
 
 @task
-def fetch_bitcoin_monthly_bulk():
+def fetch_bitcoin_etl_coingecko():
     """
     Coleta dados do Bitcoin em lote para o intervalo da execução atual.
     Se a DAG for mensal, ctx["data_interval_end"] será o fim do mês.
@@ -84,7 +84,7 @@ def fetch_bitcoin_monthly_bulk():
     max_active_runs=1,     # Executa um mês por vez para respeitar limites
     tags=["bitcoin", "bulk", "monthly"],
 )
-def bitcoin_monthly_etl():
-    fetch_bitcoin_monthly_bulk()
+def bitcoin_etl_coingecko():
+    fetch_bitcoin_etl_coingecko()
 
-dag = bitcoin_monthly_etl()
+dag = bitcoin_etl_coingecko()
