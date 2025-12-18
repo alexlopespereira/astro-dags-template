@@ -1,68 +1,33 @@
-# dags/bitcoin_etl_coingecko.py
 from __future__ import annotations
-
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from datetime import timedelta
 import pendulum
 import requests
 import pandas as pd
 
-
 DEFAULT_ARGS = {
-    "email_on_failure": True,
-    "owner": "Alex Lopes,Open in Cloud IDE",
+    "owner": "Alex Lopes",
+    "retries": 3,
+    "retry_delay": timedelta(minutes=5),
 }
 
 @task
 def fetch_bitcoin_monthly_bulk():
+    """
+    Coleta dados do Bitcoin em lote para o intervalo da execução atual.
+    Se a DAG for mensal, ctx["data_interval_end"] será o fim do mês.
+    """
     ctx = get_current_context()
     
-    # O Airflow fornece o início e fim do intervalo do schedule
-    # Se a DAG for mensal, isso cobrirá o mês inteiro automaticamente
-    start_time = ctx["data_interval_start"] 
+    # Define o intervalo baseado no agendamento do Airflow
+    start_time = ctx["data_interval_start"]
     end_time = ctx["data_interval_end"]
-
-    print(f"Buscando dados em lote: {start_time} até {end_time}")
-
-    start_s = int(start_time.timestamp())
-    end_s = int(end_time.timestamp())
-
-    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
-    params = {
-        "vs_currency": "usd",
-        "from": start_s,
-        "to": end_s,
-    }
-
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    payload = r.json()
-
-    # O processamento do DataFrame continua igual, mas agora o 
-    # 'payload' conterá centenas de linhas (pontos de dados) de uma vez.
-    df_p = pd.DataFrame(payload.get("prices", []), columns=["time_ms", "price_usd"])
-    # ... (restante do merge e processamento) ...
-
-    # Salva no banco (o if_exists="append" garante que não sobrescreve)
-    df.to_sql("bitcoin_history_alex", con=engine, if_exists="append", index=True)
     
+    print(f"[Bulk] Solicitando dados de {start_time} até {end_time}")
 
-@task
-def fetch_bitcoin_history_from_coingecko():
-    """
-    Coleta dados horários do Bitcoin na janela "ontem"
-    usando CoinGecko /coins/bitcoin/market_chart/range.
-    """
-    ctx = get_current_context()
-
-    # Janela "ontem": [data_interval_start - 1 dia, data_interval_start)
-    end_time = ctx["data_interval_start"]
-    start_time = end_time - timedelta(days=1)
-
-    print(f"[UTC] janela-alvo: {start_time} -> {end_time}")
-
-    # CoinGecko exige epoch em segundos (não ms)
+    # Conversão para Unix Timestamp (segundos) para CoinGecko
     start_s = int(start_time.timestamp())
     end_s = int(end_time.timestamp())
 
@@ -73,59 +38,52 @@ def fetch_bitcoin_history_from_coingecko():
         "to": end_s,
     }
 
-    # Observação: CoinGecko pode aplicar rate limit (HTTP 429).
-    # O retry geral é tratado pelo Airflow (default_args['retries']).
-    r = requests.get(url, params=params, timeout=30)
+    # Chamada à API
+    r = requests.get(url, params=params, timeout=60)
     r.raise_for_status()
     payload = r.json()
 
-    # payload contém listas de pares [timestamp_ms, valor]
+    # Processamento dos dados
     prices = payload.get("prices", [])
-    caps = payload.get("market_caps", [])
-    vols = payload.get("total_volumes", [])
-
     if not prices:
-        print("Sem dados retornados pela API para a janela especificada.")
+        print("Nenhum dado encontrado para este período.")
         return
 
-    # Constrói DataFrames individuais
+    # Criando DataFrames e realizando merge
     df_p = pd.DataFrame(prices, columns=["time_ms", "price_usd"])
-    df_c = pd.DataFrame(caps, columns=["time_ms", "market_cap_usd"])
-    df_v = pd.DataFrame(vols, columns=["time_ms", "volume_usd"])
+    df_c = pd.DataFrame(payload.get("market_caps", []), columns=["time_ms", "market_cap_usd"])
+    df_v = pd.DataFrame(payload.get("total_volumes", []), columns=["time_ms", "volume_usd"])
 
-    # Merge por timestamp (ms)
     df = df_p.merge(df_c, on="time_ms", how="outer").merge(df_v, on="time_ms", how="outer")
-
-    # Converte timestamp e organiza índice
+    
+    # Tratamento de Tempo e Resample Diário
+    # A API retorna dados horários se o range for > 1 dia e < 90 dias
     df["time"] = pd.to_datetime(df["time_ms"], unit="ms", utc=True)
-    df.drop(columns=["time_ms"], inplace=True)
     df.set_index("time", inplace=True)
-    df.sort_index(inplace=True)
+    df.drop(columns=["time_ms"], inplace=True)
 
-    # Preview no log
-    print(df.head(10).to_string())
+    # GARANTIA: Resample para 1 linha por dia (pega o último preço de cada dia)
+    df_daily = df.resample('D').last().dropna()
+    
+    print(f"Total de dias processados: {len(df_daily)}")
+    print(df_daily.head())
 
-    # TODO: salvar no warehouse, ex. via PostgresHook / to_sql
-    from airflow.providers.postgres.hooks.postgres import PostgresHook
+    # Gravação no Postgres (Neon Tech)
     hook = PostgresHook(postgres_conn_id="postgres")
     engine = hook.get_sqlalchemy_engine()
-    df.to_sql("bitcoin_history_alex", con=engine, if_exists="append", index=True)
-
+    
+    # O index=True salva a coluna 'time' como chave primária/coluna de tempo
+    df_daily.to_sql("bitcoin_history_alex", con=engine, if_exists="append", index=True)
 
 @dag(
     default_args=DEFAULT_ARGS,
-    schedule="0 0 * * *",  # diário à 00:00 UTC
-    start_date=pendulum.datetime(2025, 9, 17, tz="UTC"),
-    catchup=True,
-    owner_links={
-        "Alex Lopes": "mailto:alexlopespereira@gmail.com",
-        "Open in Cloud IDE": "https://cloud.astronomer.io/cm3webulw15k701npm2uhu77t/cloud-ide/cm42rbvn10lqk01nlco70l0b8/cm44gkosq0tof01mxajutk86g",
-    },
-    tags=["bitcoin", "etl", "coingecko"],
+    schedule="0 0 1 * *",  # Executa uma vez por mês (no dia 1 de cada mês)
+    start_date=pendulum.datetime(2025, 8, 1, tz="UTC"),
+    catchup=True,          # Fará o backfill mensal de Setembro, Outubro, Novembro...
+    max_active_runs=1,     # Executa um mês por vez para respeitar limites
+    tags=["bitcoin", "bulk", "monthly"],
 )
-def bitcoin_etl_coingecko():
+def bitcoin_monthly_etl():
     fetch_bitcoin_monthly_bulk()
 
-
-# Airflow descobre qualquer variável global que referencie um DAG
-dag = bitcoin_etl_coingecko()
+dag = bitcoin_monthly_etl()
