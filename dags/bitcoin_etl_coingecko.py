@@ -14,6 +14,39 @@ DEFAULT_ARGS = {
     "owner": "Alex Lopes,Open in Cloud IDE",
 }
 
+@task
+def fetch_bitcoin_monthly_bulk():
+    ctx = get_current_context()
+    
+    # O Airflow fornece o início e fim do intervalo do schedule
+    # Se a DAG for mensal, isso cobrirá o mês inteiro automaticamente
+    start_time = ctx["data_interval_start"] 
+    end_time = ctx["data_interval_end"]
+
+    print(f"Buscando dados em lote: {start_time} até {end_time}")
+
+    start_s = int(start_time.timestamp())
+    end_s = int(end_time.timestamp())
+
+    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
+    params = {
+        "vs_currency": "usd",
+        "from": start_s,
+        "to": end_s,
+    }
+
+    r = requests.get(url, params=params, timeout=30)
+    r.raise_for_status()
+    payload = r.json()
+
+    # O processamento do DataFrame continua igual, mas agora o 
+    # 'payload' conterá centenas de linhas (pontos de dados) de uma vez.
+    df_p = pd.DataFrame(payload.get("prices", []), columns=["time_ms", "price_usd"])
+    # ... (restante do merge e processamento) ...
+
+    # Salva no banco (o if_exists="append" garante que não sobrescreve)
+    df.to_sql("bitcoin_history_alex", con=engine, if_exists="append", index=True)
+    
 
 @task
 def fetch_bitcoin_history_from_coingecko():
@@ -91,7 +124,7 @@ def fetch_bitcoin_history_from_coingecko():
     tags=["bitcoin", "etl", "coingecko"],
 )
 def bitcoin_etl_coingecko():
-    fetch_bitcoin_history_from_coingecko()
+    fetch_bitcoin_monthly_bulk()
 
 
 # Airflow descobre qualquer variável global que referencie um DAG
