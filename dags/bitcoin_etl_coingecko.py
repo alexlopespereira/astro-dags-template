@@ -20,10 +20,11 @@ def fetch_bitcoin_monthly_bulk():
     Se a DAG for mensal, ctx["data_interval_end"] será o fim do mês.
     """
     ctx = get_current_context()
-    
+
     # Define o intervalo baseado no agendamento do Airflow
     start_time = ctx["data_interval_start"]
-    end_time = ctx["data_interval_end"]
+    #end_time = ctx["data_interval_end"]
+    end_time = start_time.add(months=1)
     
     print(f"[Bulk] Solicitando dados de {start_time} até {end_time}")
 
