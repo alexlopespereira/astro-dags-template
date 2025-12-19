@@ -70,7 +70,7 @@ def fetch_bitcoin_etl_coingecko():
     print(df_daily.head())
 
     # Gravação no Postgres (Neon Tech)
-    hook = PostgresHook(postgres_conn_id="postgres")
+    hook = PostgresHook(postgres_conn_id="postgres2")
     engine = hook.get_sqlalchemy_engine()
     
     # O index=True salva a coluna 'time' como chave primária/coluna de tempo
