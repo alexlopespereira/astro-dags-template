@@ -17,5 +17,3 @@ USER astro
 RUN python -m pip install --upgrade pip
 
 
-
-
