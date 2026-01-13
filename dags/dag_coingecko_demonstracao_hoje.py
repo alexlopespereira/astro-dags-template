@@ -6,7 +6,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 # Configurações de API e DB
 API_URL = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
-POSTGRES_CONN_ID = "postgres_default"
+POSTGRES_CONN_ID = "postgres"
 
 default_args = {
     'owner': 'airflow',
